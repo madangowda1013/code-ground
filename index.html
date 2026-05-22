@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Money Manager - Manage Your Finances</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Chart.js for analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- jsPDF for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+    <!-- Auth Modal -->
+    <div id="authModal" class="modal active">
+        <div class="modal-content auth-container">
+            <div class="auth-toggle">
+                <button class="auth-btn active" data-mode="login">Login</button>
+                <button class="auth-btn" data-mode="signup">Sign Up</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="loginForm" class="auth-form active">
+                <h2>Welcome Back!</h2>
+                <p class="subtitle">Manage your finances like a pro</p>
+                
+                <div class="form-group">
+                    <label for="loginEmail">Email</label>
+                    <input type="email" id="loginEmail" placeholder="your@email.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" placeholder="Enter password" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block">Login</button>
+                
+                <div class="demo-notice">
+                    <p><strong>Demo Mode:</strong> Use any email/password to login</p>
+                </div>
+            </form>
+
+            <!-- Signup Form -->
+            <form id="signupForm" class="auth-form">
+                <h2>Get Started!</h2>
+                <p class="subtitle">Create your account to manage finances</p>
+                
+                <div class="form-group">
+                    <label for="signupName">Full Name</label>
+                    <input type="text" id="signupName" placeholder="John Doe" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="signupEmail">Email</label>
+                    <input type="email" id="signupEmail" placeholder="your@email.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="signupPassword">Password</label>
+                    <input type="password" id="signupPassword" placeholder="Enter password" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="signupConfirm">Confirm Password</label>
+                    <input type="password" id="signupConfirm" placeholder="Confirm password" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="mainApp" class="app-container hidden">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">💰 Money Manager</div>
+                <button class="menu-toggle" id="menuToggle" title="Toggle sidebar menu">
+                    <span></span>
+                </button>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-page="dashboard">
+                    <span class="icon">📊</span>
+                    <span class="label">Dashboard</span>
+                </button>
+                <button class="nav-item" data-page="transactions">
+                    <span class="icon">💳</span>
+                    <span class="label">Transactions</span>
+                </button>
+                <button class="nav-item" data-page="budget">
+                    <span class="icon">📈</span>
+                    <span class="label">Budget Planner</span>
+                </button>
+                <button class="nav-item" data-page="goals">
+                    <span class="icon">🎯</span>
+                    <span class="label">Savings Goals</span>
+                </button>
+                <button class="nav-item" data-page="analytics">
+                    <span class="icon">📉</span>
+                    <span class="label">Analytics</span>
+                </button>
+                <button class="nav-item" data-page="tips">
+                    <span class="icon">💡</span>
+                    <span class="label">Financial Tips</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <button class="btn-icon" id="themeToggle" title="Toggle dark/light mode">
+                    <span class="icon">🌙</span>
+                </button>
+                <button class="btn-icon logout-btn" id="logoutBtn" title="Logout">
+                    <span class="icon">🚪</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Mobile Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="app-header">
+                <div class="header-left">
+                    <button class="mobile-menu-toggle" id="mobileMenuToggle" title="Toggle menu">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </button>
+                    <h1 id="pageTitle">Dashboard</h1>
+                </div>
+                <div class="header-right">
+                    <div class="user-info">
+                        <span id="userName">User</span>
+                        <div class="avatar">👤</div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Pages Container -->
+            <div class="pages-container">
+                <!-- Dashboard Page -->
+                <section id="dashboard" class="page active">
+                    <!-- Quick Stats -->
+                    <div class="stats-grid">
+                        <div class="stat-card balance">
+                            <div class="stat-header">
+                                <h3>Total Balance</h3>
+                                <span class="icon">💰</span>
+                            </div>
+                            <div class="stat-value" id="totalBalance">$0.00</div>
+                            <div class="stat-change positive">+5.2% this month</div>
+                        </div>
+
+                        <div class="stat-card income">
+                            <div class="stat-header">
+                                <h3>Monthly Income</h3>
+                                <span class="icon">📥</span>
+                            </div>
+                            <div class="stat-value" id="monthlyIncome">$0.00</div>
+                            <div class="stat-change">This month</div>
+                        </div>
+
+                        <div class="stat-card expense">
+                            <div class="stat-header">
+                                <h3>Total Expenses</h3>
+                                <span class="icon">📤</span>
+                            </div>
+                            <div class="stat-value" id="totalExpenses">$0.00</div>
+                            <div class="stat-change">This month</div>
+                        </div>
+
+                        <div class="stat-card savings">
+                            <div class="stat-header">
+                                <h3>Savings</h3>
+                                <span class="icon">🏦</span>
+                            </div>
+                            <div class="stat-value" id="totalSavings">$0.00</div>
+                            <div class="stat-change">Saved this month</div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions & Recent Transactions -->
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <h3>Quick Actions</h3>
+                            <div class="quick-actions">
+                                <button class="btn btn-secondary" id="addExpenseBtn">
+                                    <span>➕</span> Add Expense
+                                </button>
+                                <button class="btn btn-secondary" id="addIncomeBtn">
+                                    <span>➕</span> Add Income
+                                </button>
+                                <button class="btn btn-secondary" id="addGoalBtn">
+                                    <span>➕</span> Add Goal
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>Recent Transactions</h3>
+                            <div id="recentTransactions" class="transaction-list">
+                                <!-- Populated by JS -->
+                            </div>
+                            <a href="#" class="view-all" onclick="showPage('transactions')">View All →</a>
+                        </div>
+                    </div>
+
+                    <!-- Monthly Expense Breakdown -->
+                    <div class="card full-width">
+                        <h3>Expense Breakdown (This Month)</h3>
+                        <div id="expenseChartContainer">
+                            <canvas id="expenseChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Transactions Page -->
+                <section id="transactions" class="page">
+                    <div class="card">
+                        <div class="page-header">
+                            <h2>Transactions</h2>
+                            <div class="header-actions">
+                                <button class="btn btn-primary" id="openAddTransactionBtn">
+                                    ➕ Add Transaction
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Filters -->
+                        <div class="filters">
+                            <div class="filter-group">
+                                <label>Type</label>
+                                <select id="filterType" title="Filter by transaction type">
+                                    <option value="all">All</option>
+                                    <option value="expense">Expenses</option>
+                                    <option value="income">Income</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Category</label>
+                                <select id="filterCategory" title="Filter by category">
+                                    <option value="all">All Categories</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Date Range</label>
+                                <input type="date" id="filterStartDate" title="Start date for filtering">
+                                <input type="date" id="filterEndDate" title="End date for filtering">
+                            </div>
+                            <button class="btn btn-secondary" id="applyFiltersBtn">Apply Filters</button>
+                            <button class="btn btn-secondary" id="downloadReportBtn">📥 Download Report</button>
+                        </div>
+
+                        <!-- Transactions Table -->
+                        <div class="table-responsive">
+                            <table class="transactions-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Type</th>
+                                        <th>Category</th>
+                                        <th>Description</th>
+                                        <th>Amount</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transactionsBody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Search -->
+                        <div class="search-box">
+                            <input type="text" id="transactionSearch" placeholder="Search transactions...">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Budget Planner Page -->
+                <section id="budget" class="page">
+                    <div class="card">
+                        <div class="page-header">
+                            <h2>Monthly Budget Planner</h2>
+                            <button class="btn btn-primary" id="openBudgetBtn">
+                                ➕ Set Budget
+                            </button>
+                        </div>
+
+                        <div id="budgetList" class="budget-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Savings Goals Page -->
+                <section id="goals" class="page">
+                    <div class="card">
+                        <div class="page-header">
+                            <h2>Savings Goals</h2>
+                            <button class="btn btn-primary" id="openGoalFormBtn">
+                                ➕ New Goal
+                            </button>
+                        </div>
+
+                        <div id="goalsList" class="goals-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Analytics Page -->
+                <section id="analytics" class="page">
+                    <div class="analytics-grid">
+                        <div class="card">
+                            <h3>Expense Distribution</h3>
+                            <canvas id="expenseDistributionChart"></canvas>
+                        </div>
+
+                        <div class="card">
+                            <h3>Income vs Expenses</h3>
+                            <canvas id="incomeExpenseChart"></canvas>
+                        </div>
+
+                        <div class="card">
+                            <h3>Monthly Trends</h3>
+                            <canvas id="trendsChart"></canvas>
+                        </div>
+
+                        <div class="card">
+                            <h3>Spending by Category</h3>
+                            <canvas id="categoryChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Financial Tips Page -->
+                <section id="tips" class="page">
+                    <div class="tips-container">
+                        <div class="card full-width">
+                            <h2>💡 Financial Tips for Students</h2>
+                            <p class="subtitle">Learn smart money management strategies</p>
+                        </div>
+
+                        <div class="tips-grid">
+                            <!-- Tips populated by JS -->
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- Transaction Modal -->
+    <div id="transactionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="transactionModalTitle">Add Transaction</h2>
+                <button class="close-btn" id="closeTransactionModal">&times;</button>
+            </div>
+            <form id="transactionForm">
+                <div class="form-group">
+                    <label>Type</label>
+                    <select id="transactionType" title="Select transaction type" required>
+                        <option value="expense">Expense</option>
+                        <option value="income">Income</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Category</label>
+                    <select id="transactionCategory" title="Select transaction category" required>
+                        <!-- Populated by JS -->
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Amount</label>
+                    <input type="number" id="transactionAmount" placeholder="0.00" step="0.01" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="transactionDate" title="Select transaction date" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="transactionDescription" placeholder="Transaction details...">
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save Transaction</button>
+                    <button type="button" class="btn btn-secondary" id="cancelTransactionBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Budget Modal -->
+    <div id="budgetModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Set Budget</h2>
+                <button class="close-btn" id="closeBudgetModal">&times;</button>
+            </div>
+            <form id="budgetForm">
+                <div class="form-group">
+                    <label>Category</label>
+                    <select id="budgetCategory" title="Select budget category" required>
+                        <!-- Populated by JS -->
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Monthly Limit</label>
+                    <input type="number" id="budgetAmount" placeholder="0.00" step="0.01" required>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save Budget</button>
+                    <button type="button" class="btn btn-secondary" id="cancelBudgetBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Goal Modal -->
+    <div id="goalModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="goalModalTitle">Create Savings Goal</h2>
+                <button class="close-btn" id="closeGoalModal">&times;</button>
+            </div>
+            <form id="goalForm">
+                <div class="form-group">
+                    <label>Goal Name</label>
+                    <input type="text" id="goalName" placeholder="e.g., New Laptop" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Target Amount</label>
+                    <input type="number" id="goalTarget" placeholder="0.00" step="0.01" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Target Date</label>
+                    <input type="date" id="goalDate" title="Select goal target date" required>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save Goal</button>
+                    <button type="button" class="btn btn-secondary" id="cancelGoalBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Goal Progress Modal -->
+    <div id="goalProgressModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="goalProgressTitle">Update Goal Progress</h2>
+                <button class="close-btn" id="closeGoalProgressModal">&times;</button>
+            </div>
+            <form id="goalProgressForm">
+                <input type="hidden" id="goalProgressId">
+                <div class="form-group">
+                    <label>Amount Saved</label>
+                    <input type="number" id="goalProgressAmount" placeholder="0.00" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="goalProgressDate" title="Select progress date" required>
+                </div>
+                <div class="form-group">
+                    <label>Note</label>
+                    <input type="text" id="goalProgressNote" placeholder="Optional note">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save Progress</button>
+                    <button type="button" class="btn btn-secondary" id="cancelGoalProgressBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notificationToast" class="notification-toast">
+        <span id="notificationMessage"></span>
+        <button id="closeNotification" class="close-btn">×</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
