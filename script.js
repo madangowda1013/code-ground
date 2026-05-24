@@ -1,4 +1,16 @@
 // ==================== DATA MANAGEMENT ====================
+const API_URL = 'http://localhost:3000/api'; // local for now, live URL later
+
+function getToken() {
+  return localStorage.getItem('authToken');
+}
+
+function authHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${getToken()}`
+  };
+}
 function generateUserId(email) {
     return 'user_' + (email || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -376,6 +388,28 @@ function setupNotificationHandlers() {
 }
 
 // ==================== AUTH FUNCTIONS ====================
+async function handleLogin(email, password) {
+  try {
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    if (!res.ok) {
+      alert('Wrong email or password');
+      return;
+    }
+
+    const data = await res.json();
+    localStorage.setItem('authToken', data.token);  // save the token
+    localStorage.setItem('userName', data.user.full_name);
+    showAuthSuccess(); // your existing function to show the main app
+  } catch (err) {
+    alert('Cannot connect to server. Is it running?');
+  }
+}
+
 function setupAuthHandlers() {
     const loginForm = document.getElementById('loginForm');
     const signupForm = document.getElementById('signupForm');
@@ -404,13 +438,7 @@ function setupAuthHandlers() {
         e.preventDefault();
         const email = document.getElementById('loginEmail').value;
         const password = document.getElementById('loginPassword').value;
-
-        const user = app.manager.loginUser(email, password);
-        if (!user) {
-            showNotification('Incorrect password. Please try again.', 'error');
-            return;
-        }
-        showAuthSuccess();
+        handleLogin(email, password);
     });
 
     signupForm.addEventListener('submit', (e) => {
@@ -582,7 +610,7 @@ function setupTransactionHandlers() {
 
     transactionTypeSelect.addEventListener('change', updateTransactionCategoryOptions);
 
-    transactionForm.addEventListener('submit', (e) => {
+    transactionForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const type = document.getElementById('transactionType').value;
         const category = document.getElementById('transactionCategory').value;
@@ -590,13 +618,18 @@ function setupTransactionHandlers() {
         const date = document.getElementById('transactionDate').value;
         const description = document.getElementById('transactionDescription').value;
 
+        const formData = { type, category, amount: parseFloat(amount), date, description };
+
         if (app.currentEditingId) {
-            app.manager.editTransaction(app.currentEditingId, {
-                type, category, amount: parseFloat(amount), date, description
+            await fetch(`${API_URL}/transactions/${app.currentEditingId}`, {
+              method: 'PUT',
+              headers: authHeaders(),
+              body: JSON.stringify(formData)
             });
             showNotification('Transaction updated successfully!', 'success');
+            app.currentEditingId = null;
         } else {
-            app.manager.addTransaction(type, category, amount, date, description);
+            await saveTransaction(formData);
             showNotification('Transaction added successfully!', 'success');
         }
 
@@ -620,16 +653,29 @@ function updateTransactionCategoryOptions() {
     `).join('');
 }
 
-function loadTransactions() {
-    const tbody = document.getElementById('transactionsBody');
-    const transactions = app.manager.transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+async function loadTransactions() {
+  try {
+    const res = await fetch(`${API_URL}/transactions`, {
+      headers: authHeaders()
+    });
+    const transactions = await res.json();
+    renderTransactions(transactions);
+  } catch (err) {
+    console.error('Error loading transactions:', err);
+    showNotification('Failed to load transactions', 'error');
+  }
+}
 
-    if (transactions.length === 0) {
+function renderTransactions(transactions) {
+    const tbody = document.getElementById('transactionsBody');
+    const sorted = transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    if (sorted.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 2rem;">No transactions yet</td></tr>';
         return;
     }
 
-    tbody.innerHTML = transactions.map(t => `
+    tbody.innerHTML = sorted.map(t => `
         <tr>
             <td>${formatDate(t.date)}</td>
             <td><span class="type-badge ${t.type}">${t.type.toUpperCase()}</span></td>
@@ -646,29 +692,59 @@ function loadTransactions() {
     `).join('');
 }
 
-function editTransaction(id) {
-    const transaction = app.manager.transactions.find(t => t.id === id);
-    if (!transaction) return;
-
-    app.currentEditingId = id;
-    document.getElementById('transactionType').value = transaction.type;
-    updateTransactionCategoryOptions();
-    document.getElementById('transactionCategory').value = transaction.category;
-    document.getElementById('transactionAmount').value = transaction.amount;
-    document.getElementById('transactionDate').value = transaction.date;
-    document.getElementById('transactionDescription').value = transaction.description || '';
-    document.getElementById('transactionModalTitle').textContent = 'Edit Transaction';
-    
-    openModal('transactionModal');
+async function saveTransaction(formData) {
+  try {
+    await fetch(`${API_URL}/transactions`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(formData)
+    });
+    loadTransactions(); // refresh the list
+  } catch (err) {
+    console.error('Error saving transaction:', err);
+    showNotification('Failed to save transaction', 'error');
+    throw err;
+  }
 }
 
-function deleteTransaction(id) {
+async function editTransaction(id) {
+    try {
+        const res = await fetch(`${API_URL}/transactions/${id}`, {
+            headers: authHeaders()
+        });
+        const transaction = await res.json();
+        
+        app.currentEditingId = id;
+        document.getElementById('transactionType').value = transaction.type;
+        updateTransactionCategoryOptions();
+        document.getElementById('transactionCategory').value = transaction.category;
+        document.getElementById('transactionAmount').value = transaction.amount;
+        document.getElementById('transactionDate').value = transaction.date;
+        document.getElementById('transactionDescription').value = transaction.description || '';
+        document.getElementById('transactionModalTitle').textContent = 'Edit Transaction';
+        
+        openModal('transactionModal');
+    } catch (err) {
+        console.error('Error loading transaction:', err);
+        showNotification('Failed to load transaction', 'error');
+    }
+}
+
+async function deleteTransaction(id) {
     if (confirm('Are you sure you want to delete this transaction?')) {
-        app.manager.deleteTransaction(id);
-        loadTransactions();
-        updateDashboardStats();
-        updateRecentTransactions();
-        showNotification('Transaction deleted successfully!', 'success');
+        try {
+            await fetch(`${API_URL}/transactions/${id}`, {
+              method: 'DELETE',
+              headers: authHeaders()
+            });
+            loadTransactions();
+            updateDashboardStats();
+            updateRecentTransactions();
+            showNotification('Transaction deleted successfully!', 'success');
+        } catch (err) {
+            console.error('Error deleting transaction:', err);
+            showNotification('Failed to delete transaction', 'error');
+        }
     }
 }
 
@@ -833,25 +909,49 @@ function setupBudgetHandlers() {
         openModal('budgetModal');
     });
 
-    budgetForm.addEventListener('submit', (e) => {
+    budgetForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const category = document.getElementById('budgetCategory').value;
         const amount = document.getElementById('budgetAmount').value;
 
-        app.manager.setBudget(category, amount);
-        showNotification('Budget set successfully!', 'success');
-        closeModal('budgetModal');
-        loadBudgets();
+        try {
+            await fetch(`${API_URL}/budgets`, {
+              method: 'POST',
+              headers: authHeaders(),
+              body: JSON.stringify({ category, amount: parseFloat(amount) })
+            });
+            showNotification('Budget set successfully!', 'success');
+            closeModal('budgetModal');
+            loadBudgets();
+        } catch (err) {
+            console.error('Error setting budget:', err);
+            showNotification('Failed to set budget', 'error');
+        }
     });
 
     closeBudgetModal.addEventListener('click', () => closeModal('budgetModal'));
     cancelBudgetBtn.addEventListener('click', () => closeModal('budgetModal'));
 }
 
-function loadBudgets() {
+async function loadBudgets() {
+    try {
+        const res = await fetch(`${API_URL}/budgets`, {
+            headers: authHeaders()
+        });
+        const budgets = await res.json();
+        const expenseRes = await fetch(`${API_URL}/transactions/analytics/expenses-by-category`, {
+            headers: authHeaders()
+        });
+        const expensesByCategory = await expenseRes.json();
+        renderBudgets(budgets, expensesByCategory);
+    } catch (err) {
+        console.error('Error loading budgets:', err);
+        showNotification('Failed to load budgets', 'error');
+    }
+}
+
+function renderBudgets(budgets, expensesByCategory) {
     const container = document.getElementById('budgetList');
-    const budgets = app.manager.budgets;
-    const expensesByCategory = app.manager.getExpensesByCategory();
 
     if (Object.keys(budgets).length === 0) {
         container.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No budgets set yet. Create one to track spending!</p>';
@@ -899,11 +999,19 @@ function loadBudgets() {
     });
 }
 
-function deleteBudget(category) {
+async function deleteBudget(category) {
     if (confirm(`Delete budget for ${category}?`)) {
-        app.manager.deleteBudget(category);
-        loadBudgets();
-        showNotification('Budget deleted!', 'success');
+        try {
+            await fetch(`${API_URL}/budgets/${encodeURIComponent(category)}`, {
+              method: 'DELETE',
+              headers: authHeaders()
+            });
+            loadBudgets();
+            showNotification('Budget deleted!', 'success');
+        } catch (err) {
+            console.error('Error deleting budget:', err);
+            showNotification('Failed to delete budget', 'error');
+        }
     }
 }
 
@@ -922,26 +1030,43 @@ function setupGoalHandlers() {
         openModal('goalModal');
     });
 
-    goalForm.addEventListener('submit', (e) => {
+    goalForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const name = document.getElementById('goalName').value;
         const target = document.getElementById('goalTarget').value;
         const date = document.getElementById('goalDate').value;
 
-        if (app.currentEditingId) {
-            app.manager.updateGoal(app.currentEditingId, {
-                name,
-                target: parseFloat(target),
-                targetDate: date
-            });
-            showNotification('Goal details updated!', 'success');
-        } else {
-            app.manager.addGoal(name, target, date);
-            showNotification('Goal created!', 'success');
-        }
+        try {
+            if (app.currentEditingId) {
+                await fetch(`${API_URL}/goals/${app.currentEditingId}`, {
+                  method: 'PUT',
+                  headers: authHeaders(),
+                  body: JSON.stringify({
+                    name,
+                    target: parseFloat(target),
+                    targetDate: date
+                  })
+                });
+                showNotification('Goal details updated!', 'success');
+            } else {
+                await fetch(`${API_URL}/goals`, {
+                  method: 'POST',
+                  headers: authHeaders(),
+                  body: JSON.stringify({
+                    name,
+                    target: parseFloat(target),
+                    targetDate: date
+                  })
+                });
+                showNotification('Goal created!', 'success');
+            }
 
-        closeModal('goalModal');
-        loadGoals();
+            closeModal('goalModal');
+            loadGoals();
+        } catch (err) {
+            console.error('Error saving goal:', err);
+            showNotification('Failed to save goal', 'error');
+        }
     });
 
     closeGoalModal.addEventListener('click', () => closeModal('goalModal'));
@@ -953,26 +1078,51 @@ function setupGoalProgressHandlers() {
     const closeGoalProgressModal = document.getElementById('closeGoalProgressModal');
     const cancelGoalProgressBtn = document.getElementById('cancelGoalProgressBtn');
 
-    progressForm.addEventListener('submit', (e) => {
+    progressForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const goalId = document.getElementById('goalProgressId').value;
         const amount = document.getElementById('goalProgressAmount').value;
         const date = document.getElementById('goalProgressDate').value;
         const note = document.getElementById('goalProgressNote').value;
 
-        app.manager.addGoalProgress(goalId, amount, date, note);
-        showNotification('Progress saved!', 'success');
-        closeModal('goalProgressModal');
-        loadGoals();
+        try {
+            await fetch(`${API_URL}/goals/${goalId}/progress`, {
+              method: 'POST',
+              headers: authHeaders(),
+              body: JSON.stringify({
+                amount: parseFloat(amount),
+                date,
+                note
+              })
+            });
+            showNotification('Progress saved!', 'success');
+            closeModal('goalProgressModal');
+            loadGoals();
+        } catch (err) {
+            console.error('Error saving goal progress:', err);
+            showNotification('Failed to save progress', 'error');
+        }
     });
 
     closeGoalProgressModal.addEventListener('click', () => closeModal('goalProgressModal'));
     cancelGoalProgressBtn.addEventListener('click', () => closeModal('goalProgressModal'));
 }
 
-function loadGoals() {
+async function loadGoals() {
+    try {
+        const res = await fetch(`${API_URL}/goals`, {
+            headers: authHeaders()
+        });
+        const goals = await res.json();
+        renderGoals(goals);
+    } catch (err) {
+        console.error('Error loading goals:', err);
+        showNotification('Failed to load goals', 'error');
+    }
+}
+
+function renderGoals(goals) {
     const container = document.getElementById('goalsList');
-    const goals = app.manager.goals;
 
     if (goals.length === 0) {
         container.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No savings goals yet. Start saving towards your dreams!</p>';
@@ -984,8 +1134,7 @@ function loadGoals() {
         const remaining = goal.target - goal.current;
         const daysLeft = Math.ceil((new Date(goal.targetDate) - new Date()) / (1000 * 60 * 60 * 24));
 
-        const goalProgress = app.manager.getGoalProgress(goal.id);
-        const latestProgress = goalProgress[0];
+        const latestProgress = goal.progress && goal.progress[0];
         const progressNote = latestProgress && latestProgress.note ? `
                 <div class="goal-note">Last note: ${latestProgress.note}</div>
                 <div class="goal-note-date">${formatDate(latestProgress.date)}</div>
@@ -1019,43 +1168,70 @@ function loadGoals() {
     }).join('');
 }
 
-function editGoal(id) {
-    const goal = app.manager.goals.find(g => g.id === id);
-    if (!goal) return;
-
-    app.currentEditingId = id;
-    document.getElementById('goalName').value = goal.name;
-    document.getElementById('goalTarget').value = goal.target;
-    document.getElementById('goalDate').value = goal.targetDate;
-    document.getElementById('goalModalTitle').textContent = 'Edit Savings Goal';
-    
-    openModal('goalModal');
+async function editGoal(id) {
+    try {
+        const res = await fetch(`${API_URL}/goals/${id}`, {
+            headers: authHeaders()
+        });
+        const goal = await res.json();
+        
+        app.currentEditingId = id;
+        document.getElementById('goalName').value = goal.name;
+        document.getElementById('goalTarget').value = goal.target;
+        document.getElementById('goalDate').value = goal.targetDate;
+        document.getElementById('goalModalTitle').textContent = 'Edit Savings Goal';
+        
+        openModal('goalModal');
+    } catch (err) {
+        console.error('Error loading goal:', err);
+        showNotification('Failed to load goal', 'error');
+    }
 }
 
-function openGoalProgress(goalId) {
-    const goal = app.manager.goals.find(g => g.id === goalId);
-    if (!goal) return;
-
-    document.getElementById('goalProgressId').value = goalId;
-    document.getElementById('goalProgressAmount').value = '';
-    document.getElementById('goalProgressDate').value = new Date().toISOString().split('T')[0];
-    document.getElementById('goalProgressNote').value = '';
-    document.getElementById('goalProgressTitle').textContent = `Update Progress for ${goal.name}`;
-    openModal('goalProgressModal');
+async function openGoalProgress(goalId) {
+    try {
+        const res = await fetch(`${API_URL}/goals/${goalId}`, {
+            headers: authHeaders()
+        });
+        const goal = await res.json();
+        
+        document.getElementById('goalProgressId').value = goalId;
+        document.getElementById('goalProgressAmount').value = '';
+        document.getElementById('goalProgressDate').value = new Date().toISOString().split('T')[0];
+        document.getElementById('goalProgressNote').value = '';
+        document.getElementById('goalProgressTitle').textContent = `Update Progress for ${goal.name}`;
+        openModal('goalProgressModal');
+    } catch (err) {
+        console.error('Error loading goal:', err);
+        showNotification('Failed to load goal', 'error');
+    }
 }
 
-function deleteGoal(id) {
+async function deleteGoal(id) {
     if (confirm('Delete this goal?')) {
-        app.manager.deleteGoal(id);
-        loadGoals();
-        showNotification('Goal deleted!', 'success');
+        try {
+            await fetch(`${API_URL}/goals/${id}`, {
+              method: 'DELETE',
+              headers: authHeaders()
+            });
+            loadGoals();
+            showNotification('Goal deleted!', 'success');
+        } catch (err) {
+            console.error('Error deleting goal:', err);
+            showNotification('Failed to delete goal', 'error');
+        }
     }
 }
 
 // ==================== ANALYTICS ====================
-function initializeAnalyticsCharts() {
-    const expensesByCategory = app.manager.getExpensesByCategory();
-    const allTransactions = app.manager.transactions;
+async function initializeAnalyticsCharts() {
+    try {
+        const res = await fetch(`${API_URL}/transactions/analytics`, {
+            headers: authHeaders()
+        });
+        const analyticsData = await res.json();
+        const expensesByCategory = analyticsData.expensesByCategory || {};
+        const allTransactions = analyticsData.transactions || [];
 
     // Chart 1: Expense Distribution (Pie)
     const expenseCtx = document.getElementById('expenseDistributionChart');
@@ -1242,6 +1418,10 @@ function initializeAnalyticsCharts() {
                 }
             }
         });
+    }
+    } catch (err) {
+        console.error('Error loading analytics:', err);
+        showNotification('Failed to load analytics', 'error');
     }
 }
 
