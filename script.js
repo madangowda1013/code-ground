@@ -630,11 +630,9 @@ function setupTransactionHandlers() {
             app.currentEditingId = null;
         } else {
             await saveTransaction(formData);
-            showNotification('Transaction added successfully!', 'success');
         }
 
         closeModal('transactionModal');
-        loadTransactions();
         updateDashboardStats();
         updateRecentTransactions();
     });
@@ -654,16 +652,19 @@ function updateTransactionCategoryOptions() {
 }
 
 async function loadTransactions() {
-  try {
-    const res = await fetch(`${API_URL}/transactions`, {
-      headers: authHeaders()
-    });
-    const transactions = await res.json();
-    renderTransactions(transactions);
-  } catch (err) {
-    console.error('Error loading transactions:', err);
-    showNotification('Failed to load transactions', 'error');
-  }
+    try {
+        const res = await fetch(`${API_URL}/transactions`, {
+            headers: authHeaders()
+        });
+
+        if (!res.ok) throw new Error('Failed to load transactions');
+
+        const transactions = await res.json();
+        renderTransactions(transactions);
+    } catch (err) {
+        console.error('Load transactions failed:', err);
+        // fail silently: don't show user-facing alerts here
+    }
 }
 
 function renderTransactions(transactions) {
@@ -693,18 +694,30 @@ function renderTransactions(transactions) {
 }
 
 async function saveTransaction(formData) {
-  try {
-    await fetch(`${API_URL}/transactions`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(formData)
-    });
-    loadTransactions(); // refresh the list
-  } catch (err) {
-    console.error('Error saving transaction:', err);
-    showNotification('Failed to save transaction', 'error');
-    throw err;
-  }
+    try {
+        const res = await fetch(`${API_URL}/transactions`, {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify(formData)
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error('Save failed:', err);
+            showNotification('Failed to save transaction', 'error');
+            return;
+        }
+
+        // wait for the saved transaction to be available, then reload
+        await loadTransactions();
+        await loadBudgets();
+        showNotification('Transaction added!', 'success');
+
+    } catch (err) {
+        console.error(err);
+        showNotification('Server connection error', 'error');
+        throw err;
+    }
 }
 
 async function editTransaction(id) {
