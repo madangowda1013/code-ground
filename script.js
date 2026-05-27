@@ -2,7 +2,7 @@
 const API_URL = 'https://money-manager-backend-production-e854.up.railway.app/api';  // local for now, live URL later
 
 function getToken() {
-  return localStorage.getItem('authTconst API_URL = 'money-moken');
+  return localStorage.getItem('authToken');
 }
 
 function authHeaders() {
