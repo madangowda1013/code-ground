@@ -1103,7 +1103,7 @@ function setupGoalHandlers() {
 
         try {
             if (app.currentEditingId) {
-                await fetch(`${API_URL}/goals/${app.currentEditingId}`, {
+                const res = await fetch(`${API_URL}/goals/${app.currentEditingId}`, {
                   method: 'PUT',
                   headers: authHeaders(),
                   body: JSON.stringify({
@@ -1112,9 +1112,10 @@ function setupGoalHandlers() {
                     targetDate: date
                   })
                 });
+                if (!res.ok) throw new Error('Failed to update goal');
                 showNotification('Goal details updated!', 'success');
             } else {
-                await fetch(`${API_URL}/goals`, {
+                const res = await fetch(`${API_URL}/goals`, {
                   method: 'POST',
                   headers: authHeaders(),
                   body: JSON.stringify({
@@ -1123,11 +1124,13 @@ function setupGoalHandlers() {
                     targetDate: date
                   })
                 });
+                if (!res.ok) throw new Error('Failed to create goal');
                 showNotification('Goal created!', 'success');
             }
 
             closeModal('goalModal');
-            loadGoals();
+            await loadGoals();
+            updateDashboardStats();
         } catch (err) {
             console.error('Error saving goal:', err);
             showNotification('Failed to save goal', 'error');
@@ -1151,7 +1154,7 @@ function setupGoalProgressHandlers() {
         const note = document.getElementById('goalProgressNote').value;
 
         try {
-            await fetch(`${API_URL}/goals/${goalId}/progress`, {
+            const res = await fetch(`${API_URL}/goals/${goalId}/progress`, {
               method: 'POST',
               headers: authHeaders(),
               body: JSON.stringify({
@@ -1160,9 +1163,11 @@ function setupGoalProgressHandlers() {
                 note
               })
             });
+            if (!res.ok) throw new Error('Failed to save goal progress');
             showNotification('Progress saved!', 'success');
             closeModal('goalProgressModal');
-            loadGoals();
+            await loadGoals();
+            updateDashboardStats();
         } catch (err) {
             console.error('Error saving goal progress:', err);
             showNotification('Failed to save progress', 'error');
@@ -1180,8 +1185,14 @@ async function loadGoals() {
         });
         if (!res.ok) throw new Error('Failed to load goals');
         const goals = await res.json();
-        app.manager.goals = Array.isArray(goals) ? goals : [];
+        app.manager.goals = Array.isArray(goals) ? goals.map(goal => ({
+            ...goal,
+            target: Number(goal.target || 0),
+            current: Number(goal.current || 0),
+            progress: Array.isArray(goal.progress) ? goal.progress : []
+        })) : [];
         renderGoals(app.manager.goals);
+        updateDashboardStats();
     } catch (err) {
         console.error('Error loading goals:', err);
         showNotification('Failed to load goals', 'error');
