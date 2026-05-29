@@ -1097,39 +1097,30 @@ function setupGoalHandlers() {
 
     goalForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const name = document.getElementById('goalName').value;
-        const target = document.getElementById('goalTarget').value;
+        const name = document.getElementById('goalName').value.trim();
+        const target = parseFloat(document.getElementById('goalTarget').value);
         const date = document.getElementById('goalDate').value;
 
         try {
+            if (!name || !date || Number.isNaN(target) || target <= 0) {
+                throw new Error('Please enter valid goal details.');
+            }
+
             if (app.currentEditingId) {
-                const res = await fetch(`${API_URL}/goals/${app.currentEditingId}`, {
-                  method: 'PUT',
-                  headers: authHeaders(),
-                  body: JSON.stringify({
+                app.manager.updateGoal(app.currentEditingId, {
                     name,
-                    target: parseFloat(target),
+                    target,
                     targetDate: date
-                  })
                 });
-                if (!res.ok) throw new Error('Failed to update goal');
                 showNotification('Goal details updated!', 'success');
             } else {
-                const res = await fetch(`${API_URL}/goals`, {
-                  method: 'POST',
-                  headers: authHeaders(),
-                  body: JSON.stringify({
-                    name,
-                    target: parseFloat(target),
-                    targetDate: date
-                  })
-                });
-                if (!res.ok) throw new Error('Failed to create goal');
+                app.manager.addGoal(name, target, date);
                 showNotification('Goal created!', 'success');
             }
 
+            app.currentEditingId = null;
             closeModal('goalModal');
-            await loadGoals();
+            renderGoals(app.manager.goals);
             updateDashboardStats();
         } catch (err) {
             console.error('Error saving goal:', err);
@@ -1146,27 +1137,24 @@ function setupGoalProgressHandlers() {
     const closeGoalProgressModal = document.getElementById('closeGoalProgressModal');
     const cancelGoalProgressBtn = document.getElementById('cancelGoalProgressBtn');
 
-    progressForm.addEventListener('submit', async (e) => {
+    progressForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const goalId = document.getElementById('goalProgressId').value;
-        const amount = document.getElementById('goalProgressAmount').value;
+        const amount = parseFloat(document.getElementById('goalProgressAmount').value);
         const date = document.getElementById('goalProgressDate').value;
-        const note = document.getElementById('goalProgressNote').value;
+        const note = document.getElementById('goalProgressNote').value.trim();
 
         try {
-            const res = await fetch(`${API_URL}/goals/${goalId}/progress`, {
-              method: 'POST',
-              headers: authHeaders(),
-              body: JSON.stringify({
-                amount: parseFloat(amount),
-                date,
-                note
-              })
-            });
-            if (!res.ok) throw new Error('Failed to save goal progress');
+            if (!goalId || Number.isNaN(amount) || amount <= 0 || !date) {
+                throw new Error('Please enter valid progress details.');
+            }
+
+            const progress = app.manager.addGoalProgress(goalId, amount, date, note);
+            if (!progress) throw new Error('Goal not found.');
+
             showNotification('Progress saved!', 'success');
             closeModal('goalProgressModal');
-            await loadGoals();
+            renderGoals(app.manager.goals);
             updateDashboardStats();
         } catch (err) {
             console.error('Error saving goal progress:', err);
@@ -1194,8 +1182,9 @@ async function loadGoals() {
         renderGoals(app.manager.goals);
         updateDashboardStats();
     } catch (err) {
-        console.error('Error loading goals:', err);
-        showNotification('Failed to load goals', 'error');
+        console.warn('Unable to load goals from API, using local data instead:', err);
+        renderGoals(app.manager.goals);
+        updateDashboardStats();
     }
 }
 
@@ -1212,7 +1201,8 @@ function renderGoals(goals) {
         const remaining = goal.target - goal.current;
         const daysLeft = Math.ceil((new Date(goal.targetDate) - new Date()) / (1000 * 60 * 60 * 24));
 
-        const latestProgress = goal.progress && goal.progress[0];
+        const progressEntries = Array.isArray(goal.progress) ? goal.progress : app.manager.getGoalProgress(goal.id);
+        const latestProgress = progressEntries[0];
         const progressNote = latestProgress && latestProgress.note ? `
                 <div class="goal-note">Last note: ${latestProgress.note}</div>
                 <div class="goal-note-date">${formatDate(latestProgress.date)}</div>
@@ -1246,58 +1236,42 @@ function renderGoals(goals) {
     }).join('');
 }
 
-async function editGoal(id) {
-    try {
-        const res = await fetch(`${API_URL}/goals/${id}`, {
-            headers: authHeaders()
-        });
-        const goal = await res.json();
-        
-        app.currentEditingId = id;
-        document.getElementById('goalName').value = goal.name;
-        document.getElementById('goalTarget').value = goal.target;
-        document.getElementById('goalDate').value = goal.targetDate;
-        document.getElementById('goalModalTitle').textContent = 'Edit Savings Goal';
-        
-        openModal('goalModal');
-    } catch (err) {
-        console.error('Error loading goal:', err);
+function editGoal(id) {
+    const goal = app.manager.goals.find(g => g.id === id);
+    if (!goal) {
         showNotification('Failed to load goal', 'error');
+        return;
     }
+
+    app.currentEditingId = id;
+    document.getElementById('goalName').value = goal.name;
+    document.getElementById('goalTarget').value = goal.target;
+    document.getElementById('goalDate').value = goal.targetDate;
+    document.getElementById('goalModalTitle').textContent = 'Edit Savings Goal';
+    openModal('goalModal');
 }
 
-async function openGoalProgress(goalId) {
-    try {
-        const res = await fetch(`${API_URL}/goals/${goalId}`, {
-            headers: authHeaders()
-        });
-        const goal = await res.json();
-        
-        document.getElementById('goalProgressId').value = goalId;
-        document.getElementById('goalProgressAmount').value = '';
-        document.getElementById('goalProgressDate').value = new Date().toISOString().split('T')[0];
-        document.getElementById('goalProgressNote').value = '';
-        document.getElementById('goalProgressTitle').textContent = `Update Progress for ${goal.name}`;
-        openModal('goalProgressModal');
-    } catch (err) {
-        console.error('Error loading goal:', err);
+function openGoalProgress(goalId) {
+    const goal = app.manager.goals.find(g => g.id === goalId);
+    if (!goal) {
         showNotification('Failed to load goal', 'error');
+        return;
     }
+
+    document.getElementById('goalProgressId').value = goalId;
+    document.getElementById('goalProgressAmount').value = '';
+    document.getElementById('goalProgressDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('goalProgressNote').value = '';
+    document.getElementById('goalProgressTitle').textContent = `Update Progress for ${goal.name}`;
+    openModal('goalProgressModal');
 }
 
-async function deleteGoal(id) {
+function deleteGoal(id) {
     if (confirm('Delete this goal?')) {
-        try {
-            await fetch(`${API_URL}/goals/${id}`, {
-              method: 'DELETE',
-              headers: authHeaders()
-            });
-            loadGoals();
-            showNotification('Goal deleted!', 'success');
-        } catch (err) {
-            console.error('Error deleting goal:', err);
-            showNotification('Failed to delete goal', 'error');
-        }
+        app.manager.deleteGoal(id);
+        renderGoals(app.manager.goals);
+        updateDashboardStats();
+        showNotification('Goal deleted!', 'success');
     }
 }
 
@@ -1700,7 +1674,7 @@ function initializeApp() {
     setupMobileMenu();
 
     // Load initial data if user is logged in
-    if (app.manager.currentUser && getToken()) {
+    if (app.manager.currentUser) {
         loadTransactions();
         loadBudgets();
         loadGoals();
