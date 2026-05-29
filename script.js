@@ -6,9 +6,10 @@ function getToken() {
 }
 
 function authHeaders() {
+  const token = getToken();
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${getToken()}`
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   };
 }
 function generateUserId(email) {
@@ -74,7 +75,9 @@ class FinanceManager {
     }
 
     logout() {
+        localStorage.removeItem('authToken');
         localStorage.removeItem('currentUser');
+        localStorage.removeItem('userName');
         this.currentUser = null;
         this.transactions = [];
         this.budgets = {};
@@ -388,6 +391,49 @@ function setupNotificationHandlers() {
 }
 
 // ==================== AUTH FUNCTIONS ====================
+function normalizeUser(user) {
+    return {
+        id: user.id,
+        name: user.name || user.full_name || user.email?.split('@')[0] || 'User',
+        email: user.email
+    };
+}
+
+function saveAuthSession(data) {
+    const user = normalizeUser(data.user || {});
+    localStorage.setItem('authToken', data.token);
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    localStorage.setItem('userName', user.name);
+    app.manager.currentUser = user;
+    app.manager.transactions = [];
+    app.manager.budgets = {};
+    app.manager.goals = [];
+    app.manager.goalProgress = [];
+}
+
+async function handleSignup(name, email, password) {
+  try {
+    const res = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_name: name, email, password })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      showNotification(data.message || 'Unable to create account', 'error');
+      return;
+    }
+
+    saveAuthSession(data);
+    showAuthSuccess();
+  } catch (err) {
+    console.error('Signup failed:', err);
+    showNotification('Cannot connect to server', 'error');
+  }
+}
+
 async function handleLogin(email, password) {
   try {
     const res = await fetch(`${API_URL}/auth/login`, {
@@ -396,17 +442,18 @@ async function handleLogin(email, password) {
       body: JSON.stringify({ email, password })
     });
 
+    const data = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      alert('Wrong email or password');
+      showNotification(data.message || 'Wrong email or password', 'error');
       return;
     }
 
-    const data = await res.json();
-    localStorage.setItem('authToken', data.token);  // save the token
-    localStorage.setItem('userName', data.user.full_name);
-    showAuthSuccess(); // your existing function to show the main app
+    saveAuthSession(data);
+    showAuthSuccess();
   } catch (err) {
-    alert('Cannot connect to server. Is it running?');
+    console.error('Login failed:', err);
+    showNotification('Cannot connect to server', 'error');
   }
 }
 
@@ -453,8 +500,7 @@ function setupAuthHandlers() {
             return;
         }
 
-        app.manager.createUser(name, email, password);
-        showAuthSuccess();
+        handleSignup(name, email, password);
     });
 }
 
@@ -465,7 +511,7 @@ function showAuthSuccess() {
     authModal.classList.remove('active');
     mainApp.classList.remove('hidden');
 
-    document.getElementById('userName').textContent = app.manager.currentUser.name;
+    document.getElementById('userName').textContent = app.manager.currentUser?.name || localStorage.getItem('userName') || 'User';
 
     loadDashboard();
     loadTransactions();
@@ -660,7 +706,10 @@ async function loadTransactions() {
         if (!res.ok) throw new Error('Failed to load transactions');
 
         const transactions = await res.json();
-        renderTransactions(transactions);
+        app.manager.transactions = Array.isArray(transactions) ? transactions : [];
+        renderTransactions(app.manager.transactions);
+        updateDashboardStats();
+        updateRecentTransactions();
     } catch (err) {
         console.error('Load transactions failed:', err);
         // fail silently: don't show user-facing alerts here
@@ -951,11 +1000,14 @@ async function loadBudgets() {
         const res = await fetch(`${API_URL}/budgets`, {
             headers: authHeaders()
         });
+        if (!res.ok) throw new Error('Failed to load budgets');
         const budgets = await res.json();
         const expenseRes = await fetch(`${API_URL}/transactions/analytics/expenses-by-category`, {
             headers: authHeaders()
         });
+        if (!expenseRes.ok) throw new Error('Failed to load budget expenses');
         const expensesByCategory = await expenseRes.json();
+        app.manager.budgets = budgets && typeof budgets === 'object' ? budgets : {};
         renderBudgets(budgets, expensesByCategory);
     } catch (err) {
         console.error('Error loading budgets:', err);
@@ -1126,8 +1178,10 @@ async function loadGoals() {
         const res = await fetch(`${API_URL}/goals`, {
             headers: authHeaders()
         });
+        if (!res.ok) throw new Error('Failed to load goals');
         const goals = await res.json();
-        renderGoals(goals);
+        app.manager.goals = Array.isArray(goals) ? goals : [];
+        renderGoals(app.manager.goals);
     } catch (err) {
         console.error('Error loading goals:', err);
         showNotification('Failed to load goals', 'error');
@@ -1635,12 +1689,15 @@ function initializeApp() {
     setupMobileMenu();
 
     // Load initial data if user is logged in
-    if (app.manager.currentUser) {
+    if (app.manager.currentUser && getToken()) {
         loadTransactions();
         loadBudgets();
         loadGoals();
         loadFinancialTips();
         showPage('dashboard');
+    } else {
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('userName');
     }
 
     // Set min date for goal
