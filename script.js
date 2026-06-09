@@ -757,10 +757,27 @@ async function saveTransaction(formData) {
             return;
         }
 
-        // wait for the saved transaction to be available, then reload
-        await loadTransactions();
-        await loadBudgets();
+        const savedTransaction = await res.json().catch(() => null);
+
+        if (savedTransaction && savedTransaction.id) {
+            app.manager.transactions = [
+                savedTransaction,
+                ...app.manager.transactions.filter(t => t.id !== savedTransaction.id)
+            ];
+            renderTransactions(app.manager.transactions);
+            updateDashboardStats();
+            updateRecentTransactions();
+        }
+
         showNotification('Transaction added!', 'success');
+
+        const refreshes = [loadTransactions()];
+        if (formData.type === 'expense') {
+            refreshes.push(loadBudgets());
+        }
+        Promise.all(refreshes).catch(err => {
+            console.error('Post-save refresh failed:', err);
+        });
 
     } catch (err) {
         console.error(err);
