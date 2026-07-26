@@ -1,5 +1,5 @@
 // ==================== DATA MANAGEMENT ====================
-const API_URL = 'https://student-money-manager.onrender.com/api';
+const API_URL = 'https://money-manager-backend-system.onrender.com/api';
 
 function getToken() {
   return localStorage.getItem('authToken');
