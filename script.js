@@ -1123,22 +1123,34 @@ function setupGoalHandlers() {
                 throw new Error('Please enter valid goal details.');
             }
 
-            if (app.currentEditingId) {
-                app.manager.updateGoal(app.currentEditingId, {
-                    name,
-                    target,
-                    targetDate: date
-                });
-                showNotification('Goal details updated!', 'success');
-            } else {
-                app.manager.addGoal(name, target, date);
-                showNotification('Goal created!', 'success');
+            const existingGoal = app.manager.goals.find(goal => goal.id === app.currentEditingId);
+            const payload = {
+                title: name,
+                targetAmount: target,
+                currentAmount: Number(existingGoal?.current || 0),
+                deadline: date,
+                status: existingGoal?.status || 'active'
+            };
+
+            const endpoint = app.currentEditingId
+                ? `${API_URL}/goals/${app.currentEditingId}`
+                : `${API_URL}/goals`;
+            const res = await fetch(endpoint, {
+                method: app.currentEditingId ? 'PUT' : 'POST',
+                headers: authHeaders(),
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json().catch(() => ({}));
+
+            if (!res.ok) {
+                throw new Error(data.message || 'Unable to save goal');
             }
+
+            showNotification(app.currentEditingId ? 'Goal details updated!' : 'Goal created!', 'success');
 
             app.currentEditingId = null;
             closeModal('goalModal');
-            renderGoals(app.manager.goals);
-            updateDashboardStats();
+            await loadGoals();
         } catch (err) {
             console.error('Error saving goal:', err);
             showNotification('Failed to save goal', 'error');
@@ -1154,7 +1166,7 @@ function setupGoalProgressHandlers() {
     const closeGoalProgressModal = document.getElementById('closeGoalProgressModal');
     const cancelGoalProgressBtn = document.getElementById('cancelGoalProgressBtn');
 
-    progressForm.addEventListener('submit', (e) => {
+    progressForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const goalId = document.getElementById('goalProgressId').value;
         const amount = parseFloat(document.getElementById('goalProgressAmount').value);
@@ -1166,13 +1178,17 @@ function setupGoalProgressHandlers() {
                 throw new Error('Please enter valid progress details.');
             }
 
-            const progress = app.manager.addGoalProgress(goalId, amount, date, note);
-            if (!progress) throw new Error('Goal not found.');
+            const res = await fetch(`${API_URL}/goals/${goalId}/progress`, {
+                method: 'POST',
+                headers: authHeaders(),
+                body: JSON.stringify({ amount, date, note })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || 'Unable to save goal progress');
 
             showNotification('Progress saved!', 'success');
             closeModal('goalProgressModal');
-            renderGoals(app.manager.goals);
-            updateDashboardStats();
+            await loadGoals();
         } catch (err) {
             console.error('Error saving goal progress:', err);
             showNotification('Failed to save progress', 'error');
@@ -1283,12 +1299,22 @@ function openGoalProgress(goalId) {
     openModal('goalProgressModal');
 }
 
-function deleteGoal(id) {
+async function deleteGoal(id) {
     if (confirm('Delete this goal?')) {
-        app.manager.deleteGoal(id);
-        renderGoals(app.manager.goals);
-        updateDashboardStats();
-        showNotification('Goal deleted!', 'success');
+        try {
+            const res = await fetch(`${API_URL}/goals/${id}`, {
+                method: 'DELETE',
+                headers: authHeaders()
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || 'Unable to delete goal');
+
+            showNotification('Goal deleted!', 'success');
+            await loadGoals();
+        } catch (err) {
+            console.error('Error deleting goal:', err);
+            showNotification(err.message || 'Failed to delete goal', 'error');
+        }
     }
 }
 
